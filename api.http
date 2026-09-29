@@ -1,0 +1,412 @@
+###############################################################################
+# AI BlogNest API: requests for the VS Code "REST Client" extension (free)
+#
+# 1. Install the extension "REST Client" (by Huachao Mao).
+# 2. Start the server: npm run dev
+# 3. Click "Send Request" above each request, top to bottom.
+#    Tokens and IDs are picked up automatically from earlier responses.
+#
+# Before step 3 (admin/editor requests), create the admin once:
+#    add ADMIN_EMAIL / ADMIN_PASSWORD to .env, then run: npm run seed:admin
+#    and put the same values in @adminEmail / @adminPassword below.
+#
+# Registering an email that already exists returns 400. That's fine,
+# just continue with the login request below it.
+###############################################################################
+
+@baseUrl = http://localhost:5000
+@adminEmail = jeeva@gmail.com
+@adminPassword = 123456
+
+@authorToken = {{loginAuthor.response.body.token}}
+@readerToken = {{loginReader.response.body.token}}
+@editorToken = {{loginEditor.response.body.token}}
+@adminToken = {{loginAdmin.response.body.token}}
+@blogId = {{createBlog.response.body._id}}
+@commentId = {{addComment.response.body._id}}
+@categoryId = {{createCategory.response.body._id}}
+@editorUserId = {{registerEditor.response.body.user.id}}
+
+### Health check
+GET {{baseUrl}}/
+
+
+###############################################################################
+# 1. AUTH
+###############################################################################
+
+### Register an author
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Priya",
+  "email": "priya@gmail.com",
+  "password": "123456",
+  "role": "author"
+}
+
+### Login as author
+# @name loginAuthor
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "priya@gmail.com",
+  "password": "123456"
+}
+
+### Register a reader
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Rohan",
+  "email": "rohan@gmail.com",
+  "password": "123456"
+}
+
+### Login as reader
+# @name loginReader
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "rohan@gmail.com",
+  "password": "123456"
+}
+
+### Get profile
+GET {{baseUrl}}/api/auth/profile
+Authorization: Bearer {{authorToken}}
+
+### Update profile
+PUT {{baseUrl}}/api/auth/profile
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "name": "Priya S",
+  "avatar": "/uploads/avatars/priya.png"
+}
+
+
+###############################################################################
+# 2. ADMIN: log in and create an editor
+###############################################################################
+
+### Login as admin (created with: npm run seed:admin)
+# @name loginAdmin
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{adminEmail}}",
+  "password": "{{adminPassword}}"
+}
+
+### Register the future editor (starts as a reader)
+# @name registerEditor
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "name": "Meera",
+  "email": "meera@gmail.com",
+  "password": "123456"
+}
+
+### Admin promotes that user to editor
+PATCH {{baseUrl}}/api/admin/users/{{editorUserId}}/role
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "role": "editor"
+}
+
+### Login as editor
+# @name loginEditor
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "meera@gmail.com",
+  "password": "123456"
+}
+
+### List users
+GET {{baseUrl}}/api/admin/users
+Authorization: Bearer {{adminToken}}
+
+### Platform stats
+GET {{baseUrl}}/api/admin/stats
+Authorization: Bearer {{adminToken}}
+
+### Reader tries an admin route (expect 403)
+GET {{baseUrl}}/api/admin/users
+Authorization: Bearer {{readerToken}}
+
+
+###############################################################################
+# 3. BLOGS: author writes, editor publishes
+###############################################################################
+
+### Create a blog (saved as draft)
+# @name createBlog
+POST {{baseUrl}}/api/blogs
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "title": "My First Blog",
+  "content": "This is my first blog content",
+  "category": "Technology",
+  "tags": ["intro", "personal"],
+  "coverImage": "/uploads/covers/first.png"
+}
+
+### My blogs (all statuses)
+GET {{baseUrl}}/api/blogs/mine
+Authorization: Bearer {{authorToken}}
+
+### Update blog and submit for review
+PUT {{baseUrl}}/api/blogs/{{blogId}}
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "content": "This is my first blog content, now updated.",
+  "status": "pending"
+}
+
+### Author tries to publish (expect 403)
+PATCH {{baseUrl}}/api/blogs/{{blogId}}/status
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+### Editor: review queue
+GET {{baseUrl}}/api/blogs/review-queue
+Authorization: Bearer {{editorToken}}
+
+### Editor publishes the blog
+PATCH {{baseUrl}}/api/blogs/{{blogId}}/status
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+### Public: list published blogs
+GET {{baseUrl}}/api/blogs?page=1&limit=10&sort=newest
+
+### Public: search and filter
+GET {{baseUrl}}/api/blogs?search=first&category=technology&tag=intro
+
+### Get one blog (by id or slug)
+GET {{baseUrl}}/api/blogs/{{blogId}}
+
+### Reader likes the blog (send again to unlike)
+POST {{baseUrl}}/api/blogs/{{blogId}}/like
+Authorization: Bearer {{readerToken}}
+
+### Blog stats (owner or staff)
+GET {{baseUrl}}/api/blogs/{{blogId}}/stats
+Authorization: Bearer {{authorToken}}
+
+### My stats (all my posts)
+GET {{baseUrl}}/api/blogs/my-stats
+Authorization: Bearer {{authorToken}}
+
+### Editor schedules the blog for later
+PATCH {{baseUrl}}/api/blogs/{{blogId}}/status
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "status": "scheduled",
+  "publishAt": "2026-12-31T09:00:00.000Z"
+}
+
+### Editor publishes it again
+PATCH {{baseUrl}}/api/blogs/{{blogId}}/status
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "status": "published"
+}
+
+
+###############################################################################
+# 4. COMMENTS: reader comments, editor moderates
+###############################################################################
+
+### Reader adds a comment (starts as pending)
+# @name addComment
+POST {{baseUrl}}/api/blogs/{{blogId}}/comments
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{
+  "content": "Great post!"
+}
+
+### Public comments (pending one is not shown yet)
+GET {{baseUrl}}/api/blogs/{{blogId}}/comments
+
+### Editor: moderation queue
+GET {{baseUrl}}/api/comments?status=pending
+Authorization: Bearer {{editorToken}}
+
+### Editor approves the comment
+PATCH {{baseUrl}}/api/comments/{{commentId}}/status
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "status": "approved"
+}
+
+### Public comments (now visible)
+GET {{baseUrl}}/api/blogs/{{blogId}}/comments
+
+### Editor marks it as spam
+PATCH {{baseUrl}}/api/comments/{{commentId}}/status
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "status": "spam"
+}
+
+### Reader deletes own comment
+DELETE {{baseUrl}}/api/comments/{{commentId}}
+Authorization: Bearer {{readerToken}}
+
+
+###############################################################################
+# 5. CATEGORIES
+###############################################################################
+
+### List categories (public)
+GET {{baseUrl}}/api/categories
+
+### Get category by slug
+GET {{baseUrl}}/api/categories/technology
+
+### Editor creates a category
+# @name createCategory
+POST {{baseUrl}}/api/categories
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "name": "Travel",
+  "description": "Trips and destinations"
+}
+
+### Editor updates it
+PUT {{baseUrl}}/api/categories/{{categoryId}}
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "description": "Trips, destinations and travel tips"
+}
+
+### Editor deletes it (posts, if any, move to General)
+DELETE {{baseUrl}}/api/categories/{{categoryId}}?reassignTo=General
+Authorization: Bearer {{editorToken}}
+
+
+###############################################################################
+# 6. AI (Gemini): may take 5-20 seconds each
+###############################################################################
+
+### Generate an AI blog (saved as draft)
+POST {{baseUrl}}/api/ai/generate-blog
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "topic": "React.js",
+  "category": "Technology",
+  "tone": "friendly",
+  "length": "short"
+}
+
+### Summarize text
+POST {{baseUrl}}/api/ai/summarize
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "content": "React.js is a JavaScript library for building user interfaces. It lets developers build reusable components and updates the page efficiently using a virtual DOM."
+}
+
+### Summarize a stored blog
+POST {{baseUrl}}/api/ai/summarize
+Authorization: Bearer {{authorToken}}
+Content-Type: application/json
+
+{
+  "blogId": "{{blogId}}"
+}
+
+### Quality audit (editor/admin)
+POST {{baseUrl}}/api/ai/quality-audit
+Authorization: Bearer {{editorToken}}
+Content-Type: application/json
+
+{
+  "blogId": "{{blogId}}"
+}
+
+### AI FAQ
+POST {{baseUrl}}/api/ai/faq
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{
+  "topic": "React.js",
+  "count": 5
+}
+
+### AI WeatherWise
+POST {{baseUrl}}/api/ai/weatherwise
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{
+  "location": "Chennai",
+  "date": "next Saturday",
+  "activity": "beach walk"
+}
+
+### AI FitTrack
+POST {{baseUrl}}/api/ai/fittrack
+Authorization: Bearer {{readerToken}}
+Content-Type: application/json
+
+{
+  "goal": "Run a 5k",
+  "fitnessLevel": "beginner",
+  "daysPerWeek": 3,
+  "minutesPerSession": 30,
+  "equipment": "none"
+}
+
+
+###############################################################################
+# 7. CLEANUP (optional)
+###############################################################################
+
+### Delete the blog (owner or staff)
+DELETE {{baseUrl}}/api/blogs/{{blogId}}
+Authorization: Bearer {{authorToken}}
